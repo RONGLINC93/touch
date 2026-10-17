@@ -329,22 +329,37 @@ class TouchToggleApp(tk.Tk):
 
     # ---- 设备列表 -----------------------------------------------------
 
-    def refresh_devices(self) -> None:
+    def refresh_devices(self) -> bool:
+        """重新枚举设备。返回 False 表示枚举本身失败(状态栏已有提示)。"""
         selected = self._selected_instance_id()
         try:
             self.devices = list_touch_devices()
         except Exception as exc:
             self.status_var.set("枚举失败: %s" % exc)
             self.devices = []
+            self._render_devices(selected)
+            self._update_mini_label()
+            return False
         self._render_devices(selected)
         self._update_mini_label()
+        return True
+
+    @staticmethod
+    def _status_text(status: str) -> str:
+        """PnP 状态 -> 界面文字。
+
+        除 OK 外的任何状态(Disabled / Error 等)都表示设备已停止工作,
+        即触摸已关闭。注意:用 Disable-PnpDevice 禁用 USB HID 触摸屏时,
+        Windows 常把它标记为 Error 而不是 Disabled,属正常现象。
+        """
+        return "启用" if status == "OK" else "禁用"
 
     def _render_devices(self, selected: str | None = None) -> None:
         self.tree.delete(*self.tree.get_children())
         self._row_instance = {}
         reselect = None
         for d in self.devices:
-            status_text = {"OK": "启用", "Disabled": "禁用"}.get(d["status"], d["status"])
+            status_text = self._status_text(d["status"])
             item = self.tree.insert(
                 "", "end",
                 values=(d["name"], status_text, d["class"]),
@@ -396,16 +411,37 @@ class TouchToggleApp(tk.Tk):
                 changed += 1
             else:
                 errors.append("%s: %s" % (d["name"], msg))
+        # 等待状态落定后重新枚举,校验操作是否真的生效
+        time.sleep(0.5)
+        if not self.refresh_devices():
+            return
+        if not enable:
+            still_on = [d["name"] for d in self.devices if d["enabled"]]
+            if still_on:
+                self.status_var.set("禁用未生效: %s 仍在工作" % "; ".join(still_on)[:200])
+                return
+        else:
+            still_off = [d["name"] for d in self.devices if not d["enabled"]]
+            if still_off:
+                self.status_var.set("启用未生效: %s,请重试" % "; ".join(still_off)[:200])
+                return
         if errors:
             self.status_var.set("部分失败: %s" % "; ".join(errors)[:220])
+        elif changed == 0:
+            self.status_var.set("所有触摸设备已处于%s状态" % action)
         else:
-            if changed == 0:
-                self.status_var.set("所有触摸设备已处于%s状态" % action)
-            else:
-                self.status_var.set(
-                    "已%s %d 个触摸设备 (%s)" % (action, changed, time.strftime("%H:%M:%S"))
+            note = ""
+            if not enable:
+                odd = sorted(
+                    {d["status"] for d in self.devices
+                     if d["status"] not in ("OK", "Disabled")}
                 )
-        self.refresh_devices()
+                if odd:
+                    note = "(Windows 状态为 %s,触摸已关闭)" % odd[0]
+            self.status_var.set(
+                "已%s %d 个触摸设备 (%s)%s"
+                % (action, changed, time.strftime("%H:%M:%S"), note)
+            )
 
     def toggle_selected(self) -> None:
         instance_id = self._selected_instance_id()
