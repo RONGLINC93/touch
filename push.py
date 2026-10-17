@@ -76,8 +76,11 @@ def main():
     # 提交信息：优先用命令行参数，否则自动生成（带版本号）
     msg = sys.argv[1] if len(sys.argv) > 1 else ""
     if not msg:
-        ver = get_version() or "unknown"
-        msg = "release v%s: 桌面小鱼宠物 - 自由游动 / 鼠标交互 / 多鱼共存" % ver
+        ver = get_version()
+        if ver:
+            msg = "release v%s: 桌面小鱼宠物 - 自由游动 / 鼠标交互 / 多鱼共存" % ver
+        else:
+            msg = "update: 桌面小鱼宠物 - 自由游动 / 鼠标交互 / 多鱼共存"
 
     print("=== 1/4 暂存并提交本地改动 ===")
     if run(["git", "add", "-A"]) != 0:
