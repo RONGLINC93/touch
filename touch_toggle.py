@@ -203,6 +203,7 @@ class TouchToggleApp(tk.Tk):
         self.attributes("-topmost", True)
 
         self.devices: list[dict] = []
+        self._row_instance: dict[str, str] = {}  # 列表行 item -> InstanceId
         self._hotkey_down = False
         self._mini = False
 
@@ -340,6 +341,7 @@ class TouchToggleApp(tk.Tk):
 
     def _render_devices(self, selected: str | None = None) -> None:
         self.tree.delete(*self.tree.get_children())
+        self._row_instance = {}
         reselect = None
         for d in self.devices:
             status_text = {"OK": "启用", "Disabled": "禁用"}.get(d["status"], d["status"])
@@ -347,7 +349,7 @@ class TouchToggleApp(tk.Tk):
                 "", "end",
                 values=(d["name"], status_text, d["class"]),
             )
-            self.tree.set(item, "instance_id", d["instance_id"])
+            self._row_instance[item] = d["instance_id"]
             if d["instance_id"] == selected:
                 reselect = item
         if reselect:
@@ -360,7 +362,7 @@ class TouchToggleApp(tk.Tk):
         sel = self.tree.selection()
         if not sel:
             return None
-        return self.tree.set(sel[0], "instance_id") or None
+        return self._row_instance.get(sel[0])
 
     def _update_mini_label(self) -> None:
         total = len(self.devices)
@@ -475,8 +477,20 @@ def main() -> None:
     if not is_admin():
         elevate()
         return
-    app = TouchToggleApp(start_mini="--mini" in sys.argv)
-    app.mainloop()
+    try:
+        app = TouchToggleApp(start_mini="--mini" in sys.argv)
+        app.mainloop()
+    except Exception:
+        import traceback
+        detail = traceback.format_exc()
+        print(detail)
+        try:
+            ctypes.windll.user32.MessageBoxW(
+                0, ("程序运行出错:\n%s" % detail)[:1800], APP_TITLE, 0x30
+            )
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":
