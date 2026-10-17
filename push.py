@@ -78,9 +78,9 @@ def main():
     if not msg:
         ver = get_version()
         if ver:
-            msg = "release v%s: 桌面小鱼宠物 - 自由游动 / 鼠标交互 / 多鱼共存" % ver
+            msg = "release v%s: 触摸屏工具 - 副屏触摸映射 / 触摸屏开关" % ver
         else:
-            msg = "update: 桌面小鱼宠物 - 自由游动 / 鼠标交互 / 多鱼共存"
+            msg = "update: 触摸屏工具 - 副屏触摸映射 / 触摸屏开关"
 
     print("=== 1/4 暂存并提交本地改动 ===")
     if run(["git", "add", "-A"]) != 0:
