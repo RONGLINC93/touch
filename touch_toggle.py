@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import locale
 import os
 import subprocess
 import sys
@@ -76,8 +77,55 @@ def elevate() -> None:
     sys.exit(0)
 
 
-def _run_ps(script: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
+def _decode_console(data: bytes | None) -> str:
+    """解码子进程输出。
+
+    Windows 中文版的 powershell.exe / schtasks.exe 按 GBK(系统代码页)输出,
+    而 Python 可能处于 UTF-8 模式;若用 text=True,读取线程会以 utf-8 解码并
+    抛出 UnicodeDecodeError,进而丢掉整段输出。因此先读 bytes 再自行解码。
+    """
+    if not data:
+        return ""
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        text = data.decode("utf-16", errors="replace")
+    else:
+        for enc in (
+            "utf-8-sig",
+            "mbcs",  # Windows 系统 ANSI 代码页(中文系统即 GBK)
+            "gb18030",
+            locale.getpreferredencoding(False),
+        ):
+            try:
+                text = data.decode(enc)
+                break
+            except (UnicodeDecodeError, LookupError):
+                continue
+        else:
+            text = data.decode("utf-8", errors="replace")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _run_capture(
+    cmd: list[str], timeout: int | None = None
+) -> subprocess.CompletedProcess[str]:
+    """捕获 stdout/stderr 为字符串,不使用 text=True,避免解码线程崩溃。"""
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        creationflags=CREATE_NO_WINDOW,
+    )
+    return subprocess.CompletedProcess(
+        proc.args,
+        proc.returncode,
+        _decode_console(proc.stdout),
+        _decode_console(proc.stderr),
+    )
+
+
+def _run_ps(script: str) -> subprocess.CompletedProcess[str]:
+    return _run_capture(
         [
             "powershell.exe",
             "-NoProfile",
@@ -88,10 +136,7 @@ def _run_ps(script: str) -> subprocess.CompletedProcess:
             "-Command",
             script,
         ],
-        capture_output=True,
-        text=True,
         timeout=PS_TIMEOUT,
-        creationflags=CREATE_NO_WINDOW,
     )
 
 
@@ -160,12 +205,7 @@ def set_device_enabled(instance_id: str, enable: bool) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 def task_exists() -> bool:
-    r = subprocess.run(
-        ["schtasks", "/Query", "/TN", TASK_NAME],
-        capture_output=True,
-        text=True,
-        creationflags=CREATE_NO_WINDOW,
-    )
+    r = _run_capture(["schtasks", "/Query", "/TN", TASK_NAME])
     return r.returncode == 0
 
 
@@ -180,9 +220,7 @@ def set_autostart(enable: bool) -> tuple[bool, str]:
     else:
         cmd = ["schtasks", "/Delete", "/TN", TASK_NAME, "/F"]
     try:
-        r = subprocess.run(
-            cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
-        )
+        r = _run_capture(cmd)
     except Exception as exc:
         return False, str(exc)
     if r.returncode == 0:
