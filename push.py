@@ -16,6 +16,10 @@ import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
+# Git 2.35.2+ 会拒绝操作"所有者与当前用户不一致"的目录(dubious ownership)。
+# 目录从其他账户/电脑复制过来时统一带上 safe.directory,避免同步脚本失效。
+GIT_BASE = ["git", "-c", "safe.directory=" + ROOT.replace("\\", "/")]
+
 
 def load_env(path):
     data = {}
@@ -62,13 +66,13 @@ def main():
         print("[凭据] .env 中无 GITHUB_TOKEN，使用系统凭据")
 
     try:
-        subprocess.run(["git", "--version"], stdout=subprocess.DEVNULL,
+        subprocess.run(GIT_BASE + ["--version"], stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, check=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
         print("[错误] 未找到 git，请先安装 Git for Windows 并确认已加入 PATH。")
         return 1
 
-    if subprocess.run(["git", "rev-parse", "--is-inside-work-tree"],
+    if subprocess.run(GIT_BASE + ["rev-parse", "--is-inside-work-tree"],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
         print("[错误] 当前目录不是 git 仓库")
         return 1
@@ -83,14 +87,14 @@ def main():
             msg = "update: 触摸屏工具 - 副屏触摸映射 / 触摸屏开关"
 
     print("=== 1/4 暂存并提交本地改动 ===")
-    if run(["git", "add", "-A"]) != 0:
+    if run(GIT_BASE + ["add", "-A"]) != 0:
         print("[错误] git add 失败")
         return 1
 
     have_commit = False
-    if subprocess.run(["git", "diff", "--cached", "--quiet"]).returncode != 0:
+    if subprocess.run(GIT_BASE + ["diff", "--cached", "--quiet"]).returncode != 0:
         print("[信息] 提交信息：%s" % msg)
-        if run(["git", "commit", "-m", msg]) != 0:
+        if run(GIT_BASE + ["commit", "-m", msg]) != 0:
             print("[错误] git commit 失败")
             return 1
         have_commit = True
@@ -99,9 +103,9 @@ def main():
 
     print("")
     print("=== 2/4 变基到远程最新（pull --rebase）===")
-    if subprocess.run(["git", "ls-remote", "--exit-code", "--heads", "origin", "main"],
+    if subprocess.run(GIT_BASE + ["ls-remote", "--exit-code", "--heads", "origin", "main"],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-        if run(["git"] + auth + ["pull", "--rebase", "origin", "main"]) != 0:
+        if run(GIT_BASE + auth + ["pull", "--rebase", "origin", "main"]) != 0:
             print("[错误] 拉取/变基失败。若有冲突请手动处理：")
             print("        查看：  git status")
             print("        解决后：git add -A && git rebase --continue")
@@ -112,7 +116,7 @@ def main():
 
     print("")
     print("=== 3/4 推送到 origin/main ===")
-    if run(["git"] + auth + ["push", "origin", "main"]) != 0:
+    if run(GIT_BASE + auth + ["push", "origin", "main"]) != 0:
         print("[错误] git push 失败")
         return 1
 

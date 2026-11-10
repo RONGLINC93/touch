@@ -13,6 +13,10 @@ import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
+# Git 2.35.2+ 会拒绝操作"所有者与当前用户不一致"的目录(dubious ownership)。
+# 目录从其他账户/电脑复制过来时统一带上 safe.directory,避免同步脚本失效。
+GIT_BASE = ["git", "-c", "safe.directory=" + ROOT.replace("\\", "/")]
+
 
 def load_env(path):
     data = {}
@@ -50,19 +54,19 @@ def main():
         print("[凭据] .env 中无 GITHUB_TOKEN，使用系统凭据")
 
     try:
-        subprocess.run(["git", "--version"], stdout=subprocess.DEVNULL,
+        subprocess.run(GIT_BASE + ["--version"], stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, check=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
         print("[错误] 未找到 git，请先安装 Git for Windows 并确认已加入 PATH。")
         return 1
 
-    if subprocess.run(["git", "rev-parse", "--is-inside-work-tree"],
+    if subprocess.run(GIT_BASE + ["rev-parse", "--is-inside-work-tree"],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
         print("[错误] 当前目录不是 git 仓库")
         return 1
 
     print("=== 从 origin/main 拉取并变基 ===")
-    rc = run(["git"] + auth + ["pull", "--rebase", "origin", "main"])
+    rc = run(GIT_BASE + auth + ["pull", "--rebase", "origin", "main"])
     if rc != 0:
         print("")
         print("[错误] 拉取失败。若存在冲突，请手动处理：")
@@ -73,7 +77,7 @@ def main():
 
     print("")
     print("=== 当前状态 ===")
-    subprocess.run(["git", "--no-pager", "log", "--oneline", "-5"])
+    subprocess.run(GIT_BASE + ["--no-pager", "log", "--oneline", "-5"])
     print("")
     print("[完成] 已同步到远程最新")
     return 0
